@@ -26,7 +26,7 @@ A robust Laravel package for syncing data between multiple Laravel projects via 
 You can install the package via composer:
 
 ```bash
-composer require syncable/syncable
+composer require abdelrhman-essa/syncable
 ```
 
 ## Publish the configuration file
