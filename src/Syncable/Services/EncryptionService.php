@@ -28,7 +28,7 @@ class EncryptionService
      * @param bool $serializeData
      */
     public function __construct(
-        string $key = null, 
+        ?string $key = null, 
         string $cipher = 'AES-256-CBC',
         bool $serializeData = true
     ) {
