@@ -71,6 +71,41 @@ class SyncService
             // Add tenant information if applicable
             if ($this->tenantService->isEnabled()) {
                 $data = $this->tenantService->attachTenantData($data, $model);
+                
+                // Add dynamic target tenant ID for System B (without affecting logs)
+                // First try to get tenant ID from getTargetTenantId method if available
+                if (method_exists($model, 'getTargetTenantId')) {
+                    $targetTenantId = $model->getTargetTenantId();
+                    if ($targetTenantId !== null) {
+                        $data['target_tenant_id'] = $targetTenantId;
+                    }
+                }
+                // Then try tenant_id property or getTenantId method
+                else if (property_exists($model, 'tenant_id') || method_exists($model, 'getTenantId')) {
+                    $targetTenantId = method_exists($model, 'getTenantId') ? $model->getTenantId() : $model->tenant_id;
+                    $data['target_tenant_id'] = $targetTenantId;
+                }
+                // If not found but specified in config, use that as fallback
+                else if ($configTenantId = Config::get('syncable.target_tenant_id')) {
+                    $data['target_tenant_id'] = $configTenantId;
+                }
+            } else {
+                // System A is not tenant-based, but System B might be
+                // First check if target_tenant_id is set on the model
+                if (property_exists($model, 'target_tenant_id') && $model->target_tenant_id !== null) {
+                    $data['target_tenant_id'] = $model->target_tenant_id;
+                }
+                // Then check model config
+                else {
+                    $modelConfig = $this->getModelConfig($model);
+                    if (isset($modelConfig['target_tenant_id'])) {
+                        $data['target_tenant_id'] = $modelConfig['target_tenant_id'];
+                    }
+                    // Then check global config
+                    else if ($configTenantId = Config::get('syncable.target_tenant_id')) {
+                        $data['target_tenant_id'] = $configTenantId;
+                    }
+                }
             }
 
             // Add our system identifier for bidirectional syncing

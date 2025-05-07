@@ -26,6 +26,14 @@ trait Syncable
     protected $changedFields = [];
 
     /**
+     * Target tenant ID to use when System A is not tenant-based but System B is.
+     * This can be set dynamically before syncing a model.
+     *
+     * @var mixed
+     */
+    protected $target_tenant_id = null;
+
+    /**
      * Boot the trait.
      *
      * @return void

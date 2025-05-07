@@ -228,6 +228,9 @@ return [
         //             ],
         //         ],
         //     ],
+        //     // For cross-tenant syncing: specify which tenant ID should be used in the target system 
+        //     // when this model is synced (only needed when source or target system is tenant-based, but not both)
+        //     'target_tenant_id' => 123,
         // ],
     ],
 

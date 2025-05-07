@@ -230,6 +230,21 @@ class SyncableController extends Controller
             $data = $decrypted;
         }
         
+        // Check for target tenant ID - this is used to initialize tenant in System B
+        // without affecting logs (separated from regular tenant handling)
+        if (isset($data['target_tenant_id'])) {
+            $targetTenantId = $data['target_tenant_id'];
+            
+            // Only initialize tenant if tenancy is enabled on this system
+            if ($this->tenantService->isEnabled()) {
+                // Initialize the tenant but don't log tenant changes
+                $this->tenantService->initializeTenant($targetTenantId, true);
+            }
+            
+            // Remove the target_tenant_id so it doesn't get processed as part of regular data
+            unset($data['target_tenant_id']);
+        }
+        
         // Handle tenant if needed
         if ($this->tenantService->isEnabled() && isset($data['tenant_id'])) {
             $this->tenantService->setCurrentTenant($data['tenant_id']);

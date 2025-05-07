@@ -385,6 +385,83 @@ class Product extends Model
 
 The `TenantAware` trait automatically adds a global scope to filter queries by the current tenant ID and ensures new records include the tenant ID when created.
 
+### Cross-System Tenant Initialization
+
+When syncing data from System A to System B, you can control which tenant is initialized in System B by:
+
+1. **Using the model's tenant ID** (default behavior):  
+   By default, the package will use the same tenant ID for the target system as the source model.
+
+2. **Customizing target tenant ID logic**:  
+   Override the `getTargetTenantId()` method in your model to provide custom logic:
+
+```php
+use Syncable\Traits\Syncable;
+use Syncable\Traits\TenantAware;
+
+class User extends Model
+{
+    use Syncable, TenantAware;
+    
+    /**
+     * Get the tenant ID to use for the target system when syncing.
+     * 
+     * @return mixed|null
+     */
+    public function getTargetTenantId()
+    {
+        // Example: Use a related model's tenant ID
+        return $this->account->tenant_id;
+        
+        // Or any other custom logic
+        // return $this->target_system_tenant_id;
+    }
+}
+```
+
+This gives you complete control over which tenant is initialized in System B during sync operations, and the tenant initialization happens without affecting the logs.
+
+### Cross-System Tenancy When Only One System is Tenant-Based
+
+#### Scenario 1: System A is NOT tenant-based, but System B IS tenant-based
+
+When your source system is not multi-tenant but your target system is, you need to specify which tenant should be used in System B:
+
+1. **Global configuration** - Set in your `.env` file or config:
+   ```php
+   // In .env file of System A
+   SYNCABLE_TARGET_TENANT_ID=123
+   
+   // Or in config/syncable.php
+   'target_tenant_id' => 123,
+   ```
+
+2. **Per-model configuration** - Specify in your model config:
+   ```php
+   // In config/syncable.php of System A
+   'models' => [
+       'App\Models\User' => [
+           // ... other config ...
+           'target_tenant_id' => 123,
+       ],
+   ],
+   ```
+
+3. **Dynamic assignment** - Implement in your code:
+   ```php
+   // In SystemA - assign a tenant ID before syncing
+   $user->target_tenant_id = 123;
+   $user->sync();
+   ```
+
+#### Scenario 2: System A IS tenant-based, but System B is NOT tenant-based
+
+When your source system is multi-tenant but your target system is not, the package automatically:
+
+1. Includes the tenant ID in the sync data
+2. System B safely ignores the tenant ID (no initialization is required)
+3. You can still track the source tenant ID in System B by adding a `tenant_id` field to your models
+
 ### Separate Database per Tenant
 
 For applications where each tenant has their own database (using packages like [stancl/tenancy](https://github.com/stancl/tenancy)), Syncable integrates seamlessly:

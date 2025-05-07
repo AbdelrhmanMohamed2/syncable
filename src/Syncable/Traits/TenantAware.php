@@ -75,4 +75,16 @@ trait TenantAware
         $column = Config::get('syncable.tenancy.identifier_column', 'tenant_id');
         return $query->where($column, $tenantId);
     }
+
+    /**
+     * Get the tenant ID to use for the target system when syncing.
+     * This can be overridden in models to provide custom logic for determining the target tenant.
+     *
+     * @return mixed|null
+     */
+    public function getTargetTenantId()
+    {
+        // By default, use the same tenant ID as the current model
+        return $this->getTenantId();
+    }
 } 
