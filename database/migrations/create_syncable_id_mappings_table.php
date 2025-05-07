@@ -23,8 +23,8 @@ return new class extends Migration
             $table->string('tenant_id')->nullable();
             $table->timestamps();
             
-            $table->unique(['local_model_type', 'local_model_id', 'system_id']);
-            $table->unique(['remote_model_type', 'remote_model_id', 'system_id']);
+            $table->unique(['local_model_type', 'local_model_id', 'system_id'], 'sync_map_local_unique');
+            $table->unique(['remote_model_type', 'remote_model_id', 'system_id'], 'sync_map_remote_unique');
             $table->index(['system_id']);
             $table->index(['tenant_id']);
         });
