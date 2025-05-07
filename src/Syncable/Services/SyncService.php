@@ -95,6 +95,13 @@ class SyncService
                 if (property_exists($model, 'target_tenant_id') && $model->target_tenant_id !== null) {
                     $data['target_tenant_id'] = $model->target_tenant_id;
                 }
+                // Then check if getTargetTenantId method exists
+                elseif (method_exists($model, 'getTargetTenantId')) {
+                    $targetTenantId = $model->getTargetTenantId();
+                    if ($targetTenantId !== null) {
+                        $data['target_tenant_id'] = $targetTenantId;
+                    }
+                }
                 // Then check model config
                 else {
                     $modelConfig = $this->getModelConfig($model);

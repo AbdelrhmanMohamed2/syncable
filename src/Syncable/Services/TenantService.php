@@ -214,9 +214,12 @@ class TenantService
                 // Try to get the tenant model
                 $tenancy = app('Stancl\Tenancy\Tenancy');
                 
-                if (method_exists($tenancy, 'getTenantModel')) {
-                    $tenantModel = $tenancy->getTenantModel();
-                    $tenant = $tenantModel::find($tenantId);
+                $tenantModelClass = config('tenancy.tenant_model');
+                if (
+                    is_subclass_of($tenantModelClass, 'Stancl\Tenancy\Database\Models\Tenant')
+                    || $tenantModelClass === 'Stancl\Tenancy\Database\Models\Tenant'
+                ) {
+                    $tenant = $tenantModelClass::find($tenantId);
                     
                     if ($tenant) {
                         // Initialize the tenant (switches database connection)

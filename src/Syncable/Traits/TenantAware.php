@@ -4,6 +4,7 @@ namespace Syncable\Traits;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Syncable\Services\TenantService;
 
 trait TenantAware
@@ -21,7 +22,12 @@ trait TenantAware
                 $tenantId = $tenantService->getCurrentTenantId();
                 if ($tenantId) {
                     $column = Config::get('syncable.tenancy.identifier_column', 'tenant_id');
-                    $query->where($column, $tenantId);
+                    
+                    // Check if the tenant column exists in the model's table
+                    $model = $query->getModel();
+                    if (self::hasTenantColumn($model, $column)) {
+                        $query->where($column, $tenantId);
+                    }
                 }
             }
         });
@@ -32,12 +38,45 @@ trait TenantAware
                 $tenantId = $tenantService->getCurrentTenantId();
                 if ($tenantId) {
                     $column = Config::get('syncable.tenancy.identifier_column', 'tenant_id');
-                    if (!isset($model->{$column})) {
+                    
+                    // Only set the tenant ID if the column exists in the model's table
+                    if (self::hasTenantColumn($model, $column) && !isset($model->{$column})) {
                         $model->{$column} = $tenantId;
                     }
                 }
             }
         });
+    }
+
+    /**
+     * Check if the tenant column exists in the model's table.
+     *
+     * @param \Illuminate\Database\Eloquent\Model $model
+     * @param string $column
+     * @return bool
+     */
+    protected static function hasTenantColumn($model, string $column): bool
+    {
+        // Try to determine if the column exists
+        try {
+            // Check if the column exists in the model's fillable array
+            if (in_array($column, $model->getFillable())) {
+                return true;
+            }
+            
+            // Check if the column exists in the actual database table
+            $schema = DB::getSchemaBuilder();
+            if ($schema->hasColumn($model->getTable(), $column)) {
+                return true;
+            }
+            
+            // Check if the attribute exists on the model (could be a dynamic property)
+            return array_key_exists($column, $model->getAttributes());
+            
+        } catch (\Exception $e) {
+            // If there's any exception, assume the column doesn't exist
+            return false;
+        }
     }
 
     /**
