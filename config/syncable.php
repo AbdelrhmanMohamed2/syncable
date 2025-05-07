@@ -43,7 +43,7 @@ return [
     */
     'encryption' => [
         'enabled' => env('SYNCABLE_ENCRYPTION_ENABLED', true),
-        'key' => env('SYNCABLE_ENCRYPTION_KEY', ''),
+        'key' => env('SYNCABLE_ENCRYPTION_KEY', 'AES-256-CBC'),
         'cipher' => env('SYNCABLE_ENCRYPTION_CIPHER', 'AES-256-CBC'),
         'serialize_data' => env('SYNCABLE_SERIALIZE_DATA', true), // Whether to serialize complex data types before encryption
     ],
