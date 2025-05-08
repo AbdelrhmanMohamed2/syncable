@@ -16,6 +16,16 @@ class IdMapping extends Model
     protected $table = 'syncable_id_mappings';
 
     /**
+     * Get the database connection name to use.
+     *
+     * @return string
+     */
+    public function getConnectionName()
+    {
+        return Config::get('syncable.database.central_connection', 'central');
+    }
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array

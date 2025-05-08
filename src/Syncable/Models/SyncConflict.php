@@ -3,6 +3,7 @@
 namespace Syncable\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Config;
 
 class SyncConflict extends Model
 {
@@ -12,6 +13,16 @@ class SyncConflict extends Model
      * @var string
      */
     protected $table = 'syncable_conflicts';
+
+    /**
+     * Get the database connection name to use.
+     *
+     * @return string
+     */
+    public function getConnectionName()
+    {
+        return Config::get('syncable.database.central_connection', 'central');
+    }
 
     /**
      * The attributes that are mass assignable.

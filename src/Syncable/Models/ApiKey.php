@@ -4,6 +4,7 @@ namespace Syncable\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Config;
 
 class ApiKey extends Model
 {
@@ -13,6 +14,16 @@ class ApiKey extends Model
      * @var string
      */
     protected $table = 'syncable_api_keys';
+
+    /**
+     * Get the database connection name to use.
+     *
+     * @return string
+     */
+    public function getConnectionName()
+    {
+        return Config::get('syncable.database.central_connection', 'central');
+    }
 
     /**
      * The attributes that are mass assignable.

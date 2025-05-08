@@ -78,6 +78,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Database Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure the database connections used by the package.
+    | The 'central' connection is used for sync-related tables that should
+    | exist outside of tenant databases in multi-tenant applications.
+    |
+    */
+    'database' => [
+        'central_connection' => env('SYNCABLE_CENTRAL_CONNECTION', 'mysql'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Bidirectional Sync Configuration
     |--------------------------------------------------------------------------
     |

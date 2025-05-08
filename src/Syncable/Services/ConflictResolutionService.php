@@ -25,6 +25,85 @@ class ConflictResolutionService
     }
     
     /**
+     * Check for conflicts in incoming data before processing it.
+     *
+     * @param array $data The incoming data
+     * @param string $action The sync action (create, update, delete)
+     * @return array The potentially modified data
+     */
+    public function checkForConflicts(array $data, string $action): array
+    {
+        // Only check for conflicts on update operations
+        if ($action !== 'update' || !Config::get('syncable.conflict_resolution.enabled', true)) {
+            return $data;
+        }
+
+        // For update operations, we need the model class and ID
+        $targetModelClass = $data['target_model'] ?? null;
+        $sourceId = $data['source_id'] ?? null;
+
+        if (!$targetModelClass || !$sourceId || !class_exists($targetModelClass)) {
+            // If missing required data, just return the original data
+            return $data;
+        }
+
+        try {
+            // Try to find the model
+            $model = $targetModelClass::find($sourceId);
+            
+            if (!$model) {
+                // Model not found, no conflicts possible
+                return $data;
+            }
+
+            // Check if the model has changes that haven't been saved yet
+            if (!$model->isDirty()) {
+                // No local changes, no conflicts
+                return $data;
+            }
+
+            // If we have both remote changes and local changes, there might be conflicts
+            $localChanges = $model->getDirty();
+            $remoteChanges = $data['changed_fields'] ?? [];
+
+            // Only if both local and remote systems changed the same fields
+            $conflicts = array_keys(array_intersect_key($localChanges, $remoteChanges));
+            
+            if (empty($conflicts)) {
+                // No conflicts found
+                return $data;
+            }
+
+            // Log the potential conflicts
+            if (Config::get('syncable.logging.enabled', true)) {
+                Log::channel(Config::get('syncable.logging.channel', 'stack'))
+                    ->info('Potential conflicts detected during sync', [
+                        'model' => $targetModelClass,
+                        'id' => $sourceId,
+                        'conflicts' => $conflicts,
+                        'origin_system' => $data['origin_system_id'] ?? 'unknown'
+                    ]);
+            }
+
+            // Mark data as having conflicts
+            $data['has_conflicts'] = true;
+            $data['conflict_fields'] = $conflicts;
+        } catch (\Exception $e) {
+            // Log the exception but don't interrupt the flow
+            if (Config::get('syncable.logging.enabled', true)) {
+                Log::channel(Config::get('syncable.logging.channel', 'stack'))
+                    ->error('Error checking for conflicts: ' . $e->getMessage(), [
+                        'exception' => get_class($e),
+                        'message' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+            }
+        }
+
+        return $data;
+    }
+    
+    /**
      * Resolve conflicts between local and remote changes.
      *
      * @param Model $localModel The local model instance

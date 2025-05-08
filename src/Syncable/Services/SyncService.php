@@ -71,7 +71,7 @@ class SyncService
             // Add tenant information if applicable
             if ($this->tenantService->isEnabled()) {
                 $data = $this->tenantService->attachTenantData($data, $model);
-                
+
                 // Add dynamic target tenant ID for System B (without affecting logs)
                 // First try to get tenant ID from getTargetTenantId method if available
                 if (method_exists($model, 'getTargetTenantId')) {
@@ -117,7 +117,7 @@ class SyncService
 
             // Add our system identifier for bidirectional syncing
             $data['origin_system_id'] = Config::get('syncable.system_id', env('SYNCABLE_SYSTEM_ID'));
-            
+
             // Track our own system's modified fields for differential sync
             if ($action === 'update' && $model->isDirty()) {
                 $data['changed_fields'] = $model->getDirty();
@@ -127,11 +127,11 @@ class SyncService
             if (in_array($action, ['update', 'delete'])) {
                 $targetSystem = Config::get('syncable.api.target_system_id', env('SYNCABLE_TARGET_SYSTEM_ID'));
                 $remoteIds = IdMapping::getRemoteModelId(
-                    get_class($model), 
-                    $model->getKey(), 
+                    get_class($model),
+                    $model->getKey(),
                     $targetSystem
                 );
-                
+
                 if ($remoteIds) {
                     // Use the remote model type and ID for the operation
                     $data['target_model'] = $remoteIds[0];
@@ -155,24 +155,24 @@ class SyncService
                 if ($action === 'create' && isset($response['data']['id'])) {
                     $targetSystem = Config::get('syncable.api.target_system_id', env('SYNCABLE_TARGET_SYSTEM_ID'));
                     $tenantId = $this->tenantService->isEnabled() ? $this->tenantService->getCurrentTenantId() : null;
-                    
+
                     IdMapping::createOrUpdateMapping(
                         get_class($model),
                         $model->getKey(),
-                        $data['target_model'],
+                        $data['source_model'] ?? get_class($model),
                         $response['data']['id'],
                         $targetSystem,
                         $tenantId
                     );
                 }
-                
+
                 event(new SyncSucceeded($model, $action));
-                
+
                 // Log successful sync
                 $this->logSync($model, $action, 'success', 'Sync completed successfully');
             } else {
                 event(new SyncFailed($model, $action, 'API request failed'));
-                
+
                 // Log failed sync
                 $this->logSync($model, $action, 'failed', 'API request failed');
             }
@@ -191,7 +191,7 @@ class SyncService
             }
 
             event(new SyncFailed($model, $action, $e->getMessage()));
-            
+
             // Log exception
             $this->logSync($model, $action, 'failed', $e->getMessage());
 
@@ -214,22 +214,22 @@ class SyncService
             if ($origin_system_id === Config::get('syncable.system_id', env('SYNCABLE_SYSTEM_ID'))) {
                 return true;
             }
-            
+
             // If bidirectional sync is enabled, check if this is a repeat sync
             if (Config::get('syncable.bidirectional.enabled', false)) {
                 // Check if we've already processed this specific change
                 return $this->syncAlreadyProcessed($model, $origin_system_id);
             }
         }
-        
+
         // Skip sync based on selective sync rules if defined
         if (method_exists($model, 'shouldSync') && !$model->shouldSync()) {
             return true;
         }
-        
+
         return false;
     }
-    
+
     /**
      * Check if a sync has already been processed from a specific origin.
      *
@@ -249,7 +249,7 @@ class SyncService
             ))
             ->exists();
     }
-    
+
     /**
      * Log sync operation to database.
      * 
@@ -264,7 +264,7 @@ class SyncService
         if (!Config::get('syncable.logging.database_enabled', true)) {
             return;
         }
-        
+
         SyncLog::create([
             'model_type' => get_class($model),
             'model_id' => $model->getKey(),
@@ -331,7 +331,7 @@ class SyncService
                 if (is_string($targetField) && strpos($targetField, '$this->') === 0) {
                     // This is a dynamic expression like '$this->name'
                     $attribute = substr($targetField, 7); // Remove '$this->' prefix
-                    
+
                     // Handle methods vs properties
                     if (strpos($attribute, '()') !== false) {
                         $method = str_replace('()', '', $attribute);
@@ -361,29 +361,29 @@ class SyncService
         // Process relationships if defined
         if (!empty($config['relations']) && is_array($config['relations'])) {
             $data['relations'] = [];
-            
+
             foreach ($config['relations'] as $relationName => $relationConfig) {
                 if (!method_exists($model, $relationName)) {
                     continue; // Skip if relation method doesn't exist
                 }
-                
+
                 $relation = $model->$relationName;
-                
+
                 if (empty($relation)) {
                     continue; // Skip if relation is empty
                 }
-                
+
                 $relationType = $relationConfig['type'] ?? 'hasOne';
                 $targetRelation = $relationConfig['target_relation'] ?? $relationName;
                 $relationMapping = $relationConfig['fields'] ?? [];
-                
+
                 // Handle different relationship types
                 if ($relationType === 'hasMany' || (is_iterable($relation) && !($relation instanceof Model))) {
                     $data['relations'][$targetRelation] = [
                         'type' => 'hasMany',
                         'data' => [],
                     ];
-                    
+
                     foreach ($relation as $relatedModel) {
                         $relatedData = $this->mapRelationData($relatedModel, $relationMapping);
                         if (!empty($relatedData)) {
@@ -405,7 +405,7 @@ class SyncService
 
         return $data;
     }
-    
+
     /**
      * Map related model data using the provided mapping configuration.
      *
@@ -418,16 +418,16 @@ class SyncService
         if (empty($mapping)) {
             return $model->toArray();
         }
-        
+
         $result = [];
         $modelData = $model->toArray();
-        
+
         foreach ($mapping as $sourceField => $targetField) {
             // Check if we're dealing with a dynamic value expression
             if (is_string($targetField) && strpos($targetField, '$this->') === 0) {
                 // This is a dynamic expression like '$this->name'
                 $attribute = substr($targetField, 7); // Remove '$this->' prefix
-                
+
                 // Handle methods vs properties
                 if (strpos($attribute, '()') !== false) {
                     $method = str_replace('()', '', $attribute);
@@ -450,7 +450,7 @@ class SyncService
                 }
             }
         }
-        
+
         return $result;
     }
 
@@ -487,36 +487,18 @@ class SyncService
     {
         try {
             $targetModelClass = $data['target_model'];
-            
-            // For update and delete operations, check if we need to map the incoming ID to a local ID
-            if (in_array($action, ['update', 'delete']) && isset($data['source_id'])) {
-                $localIds = IdMapping::getLocalModelId(
-                    $targetModelClass,
-                    $data['source_id'],
-                    $originSystemId
-                );
-                
-                if ($localIds) {
-                    // Use the local model type and ID for the operation
-                    $targetModelClass = $localIds[0];
-                    $data['source_id'] = $localIds[1];
-                } else {
-                    // If we can't find a mapping, the record might not exist locally
-                    throw new \Exception("No local mapping found for remote model {$targetModelClass} with ID {$data['source_id']}");
-                }
-            }
-            
+
             // Process the sync based on action
             switch ($action) {
                 case 'create':
                     return $this->processCreate($targetModelClass, $data, $originSystemId);
-                    
+
                 case 'update':
                     return $this->processUpdate($targetModelClass, $data, $originSystemId);
-                    
+
                 case 'delete':
                     return $this->processDelete($targetModelClass, $data, $originSystemId);
-                    
+
                 default:
                     throw new \Exception("Unknown action: {$action}");
             }
@@ -530,11 +512,11 @@ class SyncService
                         'trace' => $e->getTraceAsString(),
                     ]);
             }
-            
+
             throw $e;
         }
     }
-    
+
     /**
      * Process an incoming create request.
      *
@@ -547,35 +529,35 @@ class SyncService
     {
         // Create the model using the provided data
         $model = new $targetModelClass();
-        
+
         foreach ($data['data'] as $key => $value) {
             $model->$key = $value;
         }
-        
+
         // Disable sync temporarily to prevent loops
         if (method_exists($model, 'withoutSync')) {
             $model->withoutSync();
         }
-        
+
         $model->save();
-        
+
         // Process relationships if any
         if (isset($data['relations']) && is_array($data['relations'])) {
             $this->handleRelations($model, $data['relations']);
         }
-        
+
         // Store the ID mapping
         $tenantId = $this->tenantService->isEnabled() ? $this->tenantService->getCurrentTenantId() : null;
-        
+
         IdMapping::createOrUpdateMapping(
             get_class($model),
             $model->getKey(),
-            $data['source_model_type'] ?? $targetModelClass,
-            $data['source_model_id'] ?? $data['data']['id'] ?? null,
+            $data['source_model'] ?? $targetModelClass,
+            $data['source_id'] ?? $data['data']['id'] ?? null,
             $originSystemId,
             $tenantId
         );
-        
+
         return [
             'success' => true,
             'message' => 'Model created successfully',
@@ -585,7 +567,7 @@ class SyncService
             ],
         ];
     }
-    
+
     /**
      * Process an incoming update request.
      *
@@ -598,22 +580,24 @@ class SyncService
     {
         // Find the model to update
         $model = $targetModelClass::findOrFail($data['source_id']);
-        
+
         // If differential sync is enabled, only update changed fields
         if (Config::get('syncable.differential_sync.enabled', true) && isset($data['changed_fields'])) {
             $updateData = array_intersect_key($data['data'], $data['changed_fields']);
         } else {
             $updateData = $data['data'];
         }
-        
+
         // Check for conflicts if bidirectional sync is enabled
-        if (Config::get('syncable.bidirectional.enabled', false) && 
-            isset($data['origin_system_id']) && 
-            isset($data['changed_fields'])) {
-            
+        if (
+            Config::get('syncable.bidirectional.enabled', false) &&
+            isset($data['origin_system_id']) &&
+            isset($data['changed_fields'])
+        ) {
+
             // Get the conflict resolution service to handle conflicts
             $conflictService = app(ConflictResolutionService::class);
-            
+
             // Handle any conflicts between local and remote changes
             $updateData = $conflictService->resolveConflicts(
                 $model,
@@ -622,35 +606,35 @@ class SyncService
                 $data['origin_system_id']
             );
         }
-        
+
         foreach ($updateData as $key => $value) {
             $model->$key = $value;
         }
-        
+
         // Disable sync temporarily to prevent loops
         if (method_exists($model, 'withoutSync')) {
             $model->withoutSync();
         }
-        
+
         $model->save();
-        
+
         // Process relationships if any
         if (isset($data['relations']) && is_array($data['relations'])) {
             $this->handleRelations($model, $data['relations']);
         }
-        
+
         // Update the ID mapping if it doesn't exist
         $tenantId = $this->tenantService->isEnabled() ? $this->tenantService->getCurrentTenantId() : null;
-        
+
         IdMapping::createOrUpdateMapping(
             get_class($model),
             $model->getKey(),
-            $data['source_model_type'] ?? $targetModelClass,
-            $data['source_model_id'] ?? $data['source_id'],
+            $data['source_model'] ?? $targetModelClass,
+            $data['source_id'] ?? $data['data']['id'] ?? null,
             $originSystemId,
             $tenantId
         );
-        
+
         return [
             'success' => true,
             'message' => 'Model updated successfully',
@@ -660,7 +644,7 @@ class SyncService
             ],
         ];
     }
-    
+
     /**
      * Process an incoming delete request.
      *
@@ -673,20 +657,20 @@ class SyncService
     {
         // Find the model to delete
         $model = $targetModelClass::findOrFail($data['source_id']);
-        
+
         // Disable sync temporarily to prevent loops
         if (method_exists($model, 'withoutSync')) {
             $model->withoutSync();
         }
-        
+
         $model->delete();
-        
+
         // Delete the ID mapping
         IdMapping::where('local_model_type', get_class($model))
             ->where('local_model_id', $model->getKey())
             ->where('system_id', $originSystemId)
             ->delete();
-        
+
         return [
             'success' => true,
             'message' => 'Model deleted successfully',
@@ -710,9 +694,9 @@ class SyncService
             if (!method_exists($model, $relationName)) {
                 continue; // Skip if relation method doesn't exist
             }
-            
+
             $relationType = $relationData['type'] ?? 'hasOne';
-            
+
             if ($relationType === 'hasMany') {
                 $this->handleHasManyRelation($model, $relationName, $relationData['data'] ?? []);
             } else {
@@ -720,7 +704,7 @@ class SyncService
             }
         }
     }
-    
+
     /**
      * Handle a hasOne relationship.
      *
@@ -734,13 +718,13 @@ class SyncService
         if (empty($data)) {
             return;
         }
-        
+
         $relation = $model->$relationName();
-        
+
         if (method_exists($relation, 'getRelated')) {
             $relatedModel = $relation->getRelated();
             $instance = $model->$relationName;
-            
+
             if (!$instance) {
                 // Create new related model
                 $relatedClass = get_class($relatedModel);
@@ -754,7 +738,7 @@ class SyncService
             }
         }
     }
-    
+
     /**
      * Handle a hasMany relationship.
      *
@@ -768,13 +752,13 @@ class SyncService
         if (empty($items)) {
             return;
         }
-        
+
         $relation = $model->$relationName();
-        
+
         if (method_exists($relation, 'getRelated')) {
             $relatedModel = $relation->getRelated();
             $relatedClass = get_class($relatedModel);
-            
+
             foreach ($items as $itemData) {
                 // If there's an ID, try to find and update
                 if (isset($itemData['id'])) {
@@ -785,7 +769,7 @@ class SyncService
                         continue;
                     }
                 }
-                
+
                 // Create new related model
                 $instance = new $relatedClass();
                 $instance->fill($itemData);
@@ -805,24 +789,24 @@ class SyncService
     {
         $results = [];
         $success = true;
-        
+
         if (!isset($batch['operations']) || !is_array($batch['operations'])) {
             throw new \InvalidArgumentException('Invalid batch format. "operations" array is required.');
         }
-        
+
         foreach ($batch['operations'] as $index => $operation) {
             try {
                 if (!isset($operation['action']) || !isset($operation['data'])) {
                     throw new \InvalidArgumentException('Each operation requires "action" and "data" fields.');
                 }
-                
+
                 $action = $operation['action'];
                 $data = $operation['data'];
-                
+
                 // Process the individual sync operation
                 $opResult = $this->handleIncomingSync($data, $action, $originSystemId);
                 $results[$index] = $opResult;
-                
+
                 if (!($opResult['success'] ?? false)) {
                     $success = false;
                 }
@@ -832,7 +816,7 @@ class SyncService
                     'error' => $e->getMessage()
                 ];
                 $success = false;
-                
+
                 // Log the error
                 if (Config::get('syncable.logging.enabled', true)) {
                     Log::channel(Config::get('syncable.logging.channel', 'stack'))
@@ -845,11 +829,11 @@ class SyncService
                 }
             }
         }
-        
+
         return [
             'success' => $success,
             'message' => $success ? 'Batch processed successfully.' : 'Batch processed with errors.',
             'results' => $results
         ];
     }
-} 
+}

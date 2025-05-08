@@ -43,6 +43,10 @@ trait Syncable
         // Register model events to trigger sync
         if (Config::get('syncable.events.created', true)) {
             static::created(function ($model) {
+                if ($model->syncDisabled) {
+                    return;
+                }
+                
                 static::queueSyncJob($model, 'create');
             });
         }
