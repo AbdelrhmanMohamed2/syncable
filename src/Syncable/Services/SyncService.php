@@ -56,7 +56,7 @@ class SyncService
     public function syncModel(Model $model, string $action = 'update', ?string $origin_system_id = null): bool
     {
         try {
-            // Check if this is an incoming sync we've already processed 
+            // Check if this is an incoming sync we've already processed
             // to prevent infinite loops in bidirectional sync
             if ($this->shouldSkipSync($model, $origin_system_id)) {
                 return true;
@@ -123,22 +123,6 @@ class SyncService
                 $data['changed_fields'] = $model->getDirty();
             }
 
-            // For update and delete operations, check if we have a remote ID mapping
-            if (in_array($action, ['update', 'delete'])) {
-                $targetSystem = Config::get('syncable.api.target_system_id', env('SYNCABLE_TARGET_SYSTEM_ID'));
-                $remoteIds = IdMapping::getRemoteModelId(
-                    get_class($model),
-                    $model->getKey(),
-                    $targetSystem
-                );
-
-                if ($remoteIds) {
-                    // Use the remote model type and ID for the operation
-                    $data['target_model'] = $remoteIds[0];
-                    $data['source_id'] = $remoteIds[1];
-                }
-            }
-
             // Encrypt data if encryption is enabled
             if (Config::get('syncable.encryption.enabled', true)) {
                 $data = $this->encryptionService->encrypt($data);
@@ -159,7 +143,7 @@ class SyncService
                     IdMapping::createOrUpdateMapping(
                         get_class($model),
                         $model->getKey(),
-                        $data['source_model'] ?? get_class($model),
+                        $data['target_model'] ?? get_class($model),
                         $response['data']['id'],
                         $targetSystem,
                         $tenantId
@@ -252,7 +236,7 @@ class SyncService
 
     /**
      * Log sync operation to database.
-     * 
+     *
      * @param Model $model
      * @param string $action
      * @param string $status
@@ -322,35 +306,19 @@ class SyncService
             'source_id' => $model->getKey(),
             'target_model' => $config['target_model'] ?? get_class($model),
             'data' => [],
+            'additional' => [],
         ];
 
         // Process field mappings
         if (!empty($config['fields'])) {
             foreach ($config['fields'] as $sourceField => $targetField) {
                 // Check if we're dealing with a dynamic value expression
-                if (is_string($targetField) && strpos($targetField, '$this->') === 0) {
-                    // This is a dynamic expression like '$this->name'
-                    $attribute = substr($targetField, 7); // Remove '$this->' prefix
-
-                    // Handle methods vs properties
-                    if (strpos($attribute, '()') !== false) {
-                        $method = str_replace('()', '', $attribute);
-                        if (method_exists($model, $method)) {
-                            $data['data'][$sourceField] = $model->$method();
-                        }
-                    } else {
-                        // Access property or accessor
-                        $data['data'][$sourceField] = $model->$attribute;
+                if(is_iterable($targetField)){
+                    foreach($targetField as $key => $value){
+                        $data['data'][$sourceField][$key] = $this->getValue($value, $model, $sourceField);
                     }
-                } elseif (is_callable($targetField) && !is_string($targetField)) {
-                    // This is a callable function
-                    $data['data'][$sourceField] = call_user_func($targetField, $model);
-                } else {
-                    // Traditional field mapping - get value from model
-                    $modelData = $model->toArray();
-                    if (array_key_exists($sourceField, $modelData)) {
-                        $data['data'][$targetField] = $modelData[$sourceField];
-                    }
+                }else{
+                    $data['data'][$sourceField] = $this->getValue($targetField, $model, $sourceField);
                 }
             }
         } else {
@@ -358,100 +326,20 @@ class SyncService
             $data['data'] = $model->toArray();
         }
 
-        // Process relationships if defined
-        if (!empty($config['relations']) && is_array($config['relations'])) {
-            $data['relations'] = [];
-
-            foreach ($config['relations'] as $relationName => $relationConfig) {
-                if (!method_exists($model, $relationName)) {
-                    continue; // Skip if relation method doesn't exist
-                }
-
-                $relation = $model->$relationName;
-
-                if (empty($relation)) {
-                    continue; // Skip if relation is empty
-                }
-
-                $relationType = $relationConfig['type'] ?? 'hasOne';
-                $targetRelation = $relationConfig['target_relation'] ?? $relationName;
-                $relationMapping = $relationConfig['fields'] ?? [];
-
-                // Handle different relationship types
-                if ($relationType === 'hasMany' || (is_iterable($relation) && !($relation instanceof Model))) {
-                    $data['relations'][$targetRelation] = [
-                        'type' => 'hasMany',
-                        'data' => [],
-                    ];
-
-                    foreach ($relation as $relatedModel) {
-                        $relatedData = $this->mapRelationData($relatedModel, $relationMapping);
-                        if (!empty($relatedData)) {
-                            $data['relations'][$targetRelation]['data'][] = $relatedData;
-                        }
+        // Process additional data
+        if (!empty($config['additional']) && is_array($config['additional'])) {
+            foreach ($config['additional'] as $fieldKey => $fieldValue) {
+                if (is_iterable($fieldValue)) {
+                    foreach ($fieldValue as $nestedKey => $nestedValue) {
+                        $data['additional'][$fieldKey][$nestedKey] = $this->getValue($nestedValue, $model, $nestedKey);
                     }
                 } else {
-                    // Handle hasOne/belongsTo
-                    $relatedData = $this->mapRelationData($relation, $relationMapping);
-                    if (!empty($relatedData)) {
-                        $data['relations'][$targetRelation] = [
-                            'type' => 'hasOne',
-                            'data' => $relatedData,
-                        ];
-                    }
+                    $data['additional'][$fieldKey] = $this->getValue($fieldValue, $model, $fieldKey);
                 }
             }
         }
 
         return $data;
-    }
-
-    /**
-     * Map related model data using the provided mapping configuration.
-     *
-     * @param Model $model
-     * @param array $mapping
-     * @return array
-     */
-    protected function mapRelationData(Model $model, array $mapping): array
-    {
-        if (empty($mapping)) {
-            return $model->toArray();
-        }
-
-        $result = [];
-        $modelData = $model->toArray();
-
-        foreach ($mapping as $sourceField => $targetField) {
-            // Check if we're dealing with a dynamic value expression
-            if (is_string($targetField) && strpos($targetField, '$this->') === 0) {
-                // This is a dynamic expression like '$this->name'
-                $attribute = substr($targetField, 7); // Remove '$this->' prefix
-
-                // Handle methods vs properties
-                if (strpos($attribute, '()') !== false) {
-                    $method = str_replace('()', '', $attribute);
-                    if (method_exists($model, $method)) {
-                        $result[$sourceField] = $model->$method();
-                    }
-                } else {
-                    // Access property or accessor
-                    $result[$sourceField] = $model->$attribute;
-                }
-            } elseif (is_callable($targetField) && !is_string($targetField)) {
-                // This is a callable function
-                $result[$sourceField] = call_user_func($targetField, $model);
-            } else {
-                // Traditional field mapping
-                if (array_key_exists($targetField, $modelData)) {
-                    $result[$sourceField] = $modelData[$targetField];
-                } elseif (array_key_exists($sourceField, $modelData)) {
-                    $result[$sourceField] = $modelData[$sourceField];
-                }
-            }
-        }
-
-        return $result;
     }
 
     /**
@@ -476,6 +364,43 @@ class SyncService
     }
 
     /**
+     * Get the value of a field from a model.
+     *
+     * @param string $targetField
+     * @param Model $model
+     * @param string $sourceField
+     * @return mixed
+     */
+    protected function getValue($targetField, $model, $sourceField)
+    {
+        // Check if we're dealing with a dynamic value expression
+        if (is_string($targetField) && strpos($targetField, '$this->') === 0) {
+            // This is a dynamic expression like '$this->name'
+            $attribute = substr($targetField, 7); // Remove '$this->' prefix
+
+            // Handle methods vs properties
+            if (strpos($attribute, '()') !== false) {
+                $method = str_replace('()', '', $attribute);
+                if (method_exists($model, $method)) {
+                    return $model->$method();
+                }
+            } else {
+                // Access property or accessor
+                return $model->$attribute;
+            }
+        } elseif (is_callable($targetField) && !is_string($targetField)) {
+            // This is a callable function
+            return call_user_func($targetField, $model);
+        } else {
+            // Traditional field mapping - get value from model
+            $modelData = $model->toArray();
+            if (array_key_exists($sourceField, $modelData)) {
+                return $modelData[$sourceField];
+            }
+        }
+    }
+
+    /**
      * Handle incoming sync requests.
      *
      * @param array $data
@@ -487,6 +412,21 @@ class SyncService
     {
         try {
             $targetModelClass = $data['target_model'];
+
+            if(in_array($action, ['update', 'delete'])){
+                // Save the original source ID before mapping for correct ID mapping later
+                $data['original_source_id'] = $data['source_id'];
+                
+                $localIds = IdMapping::getLocalModelId(
+                    $data['source_model'],
+                    $data['source_id'],
+                    $originSystemId
+                );
+
+                if ($localIds) {
+                    $data['source_id'] = $localIds[1];
+                }
+            }
 
             // Process the sync based on action
             switch ($action) {
@@ -541,21 +481,21 @@ class SyncService
 
         $model->save();
 
-        // Process relationships if any
-        if (isset($data['relations']) && is_array($data['relations'])) {
-            $this->handleRelations($model, $data['relations']);
+        // Process any additional data
+        if (isset($data['additional']) && is_array($data['additional'])) {
+            $this->processAdditionalData($model, $data['additional']);
         }
 
         // Store the ID mapping
         $tenantId = $this->tenantService->isEnabled() ? $this->tenantService->getCurrentTenantId() : null;
 
         IdMapping::createOrUpdateMapping(
-            get_class($model),
-            $model->getKey(),
-            $data['source_model'] ?? $targetModelClass,
-            $data['source_id'] ?? $data['data']['id'] ?? null,
-            $originSystemId,
-            $tenantId
+            get_class($model),          // Local model type
+            $model->getKey(),           // Local model ID
+            $data['source_model'],      // Remote model type
+            $data['source_id'],         // Remote model ID
+            $originSystemId,            // Origin system ID
+            $tenantId                   // Tenant ID
         );
 
         return [
@@ -594,7 +534,6 @@ class SyncService
             isset($data['origin_system_id']) &&
             isset($data['changed_fields'])
         ) {
-
             // Get the conflict resolution service to handle conflicts
             $conflictService = app(ConflictResolutionService::class);
 
@@ -618,21 +557,24 @@ class SyncService
 
         $model->save();
 
-        // Process relationships if any
-        if (isset($data['relations']) && is_array($data['relations'])) {
-            $this->handleRelations($model, $data['relations']);
+        // Process any additional data
+        if (isset($data['additional']) && is_array($data['additional'])) {
+            $this->processAdditionalData($model, $data['additional']);
         }
 
-        // Update the ID mapping if it doesn't exist
+        // Update the ID mapping with the ORIGINAL remote ID, not the local one used for lookup
         $tenantId = $this->tenantService->isEnabled() ? $this->tenantService->getCurrentTenantId() : null;
-
+        
+        // Use the original source ID for mapping to prevent ID corruption
+        $remoteId = isset($data['original_source_id']) ? $data['original_source_id'] : $data['source_id'];
+        
         IdMapping::createOrUpdateMapping(
-            get_class($model),
-            $model->getKey(),
-            $data['source_model'] ?? $targetModelClass,
-            $data['source_id'] ?? $data['data']['id'] ?? null,
-            $originSystemId,
-            $tenantId
+            get_class($model),          // Local model type
+            $model->getKey(),           // Local model ID
+            $data['source_model'],      // Remote model type
+            $remoteId,                  // Remote model ID - critical to use original
+            $originSystemId,            // Origin system ID
+            $tenantId                   // Tenant ID
         );
 
         return [
@@ -682,98 +624,21 @@ class SyncService
     }
 
     /**
-     * Handle relationships for a model.
+     * Process additional data for a model.
      *
      * @param Model $model
-     * @param array $relations
+     * @param array $additionalData
      * @return void
      */
-    protected function handleRelations(Model $model, array $relations): void
+    protected function processAdditionalData(Model $model, array $additionalData): void
     {
-        foreach ($relations as $relationName => $relationData) {
-            if (!method_exists($model, $relationName)) {
-                continue; // Skip if relation method doesn't exist
-            }
+        foreach ($additionalData as $key => $data) {
+            // Generate the handler method name: handleAdditionalContacts, handleAdditionalAddresses, etc.
+            $handlerMethod = 'handleAdditional' . ucfirst($key);
 
-            $relationType = $relationData['type'] ?? 'hasOne';
-
-            if ($relationType === 'hasMany') {
-                $this->handleHasManyRelation($model, $relationName, $relationData['data'] ?? []);
-            } else {
-                $this->handleHasOneRelation($model, $relationName, $relationData['data'] ?? []);
-            }
-        }
-    }
-
-    /**
-     * Handle a hasOne relationship.
-     *
-     * @param Model $model
-     * @param string $relationName
-     * @param array $data
-     * @return void
-     */
-    protected function handleHasOneRelation(Model $model, string $relationName, array $data): void
-    {
-        if (empty($data)) {
-            return;
-        }
-
-        $relation = $model->$relationName();
-
-        if (method_exists($relation, 'getRelated')) {
-            $relatedModel = $relation->getRelated();
-            $instance = $model->$relationName;
-
-            if (!$instance) {
-                // Create new related model
-                $relatedClass = get_class($relatedModel);
-                $instance = new $relatedClass();
-                $instance->fill($data);
-                $relation->save($instance);
-            } else {
-                // Update existing related model
-                $instance->fill($data);
-                $instance->save();
-            }
-        }
-    }
-
-    /**
-     * Handle a hasMany relationship.
-     *
-     * @param Model $model
-     * @param string $relationName
-     * @param array $items
-     * @return void
-     */
-    protected function handleHasManyRelation(Model $model, string $relationName, array $items): void
-    {
-        if (empty($items)) {
-            return;
-        }
-
-        $relation = $model->$relationName();
-
-        if (method_exists($relation, 'getRelated')) {
-            $relatedModel = $relation->getRelated();
-            $relatedClass = get_class($relatedModel);
-
-            foreach ($items as $itemData) {
-                // If there's an ID, try to find and update
-                if (isset($itemData['id'])) {
-                    $item = $relation->where('id', $itemData['id'])->first();
-                    if ($item) {
-                        $item->fill($itemData);
-                        $item->save();
-                        continue;
-                    }
-                }
-
-                // Create new related model
-                $instance = new $relatedClass();
-                $instance->fill($itemData);
-                $relation->save($instance);
+            // If the model has a handler method for this additional data, call it
+            if (method_exists($model, $handlerMethod)) {
+                $model->$handlerMethod($data);
             }
         }
     }
