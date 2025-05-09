@@ -278,6 +278,12 @@ class SyncService
             return Config::get("syncable.models.{$className}");
         }
 
+        // Check if model has syncHandler method
+        if (method_exists($model, 'syncHandler') && $model->syncHandler() !== null) {
+            // Get config from the sync handler
+            return $model->getSyncConfig();
+        }
+        
         // Check if model has syncable trait configuration
         if (method_exists($model, 'getSyncConfig')) {
             return $model->getSyncConfig();

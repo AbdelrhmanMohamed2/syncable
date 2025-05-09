@@ -113,6 +113,117 @@ class User extends Model
 }
 ```
 
+### SyncHandler-based approach (Recommended)
+
+For better separation of concerns, you can use the SyncHandler pattern to move all sync-related logic to dedicated classes:
+
+1. First, create a sync handler class for your model:
+
+```php
+// app/Syncable/Handlers/UserSync.php
+namespace App\Syncable\Handlers;
+
+use App\Models\User;
+use Syncable\Handlers\SyncHandler;
+
+class UserSync extends SyncHandler
+{
+    /**
+     * Get the target model class name for syncing.
+     *
+     * @return string
+     */
+    public function getTargetModel(): string
+    {
+        return 'Customer';
+    }
+
+    /**
+     * Get the field mapping for syncing.
+     *
+     * @return array
+     */
+    public function getFieldMap(): array
+    {
+        return [
+            'name' => 'full_name',
+            'email' => 'email_address',
+        ];
+    }
+
+    /**
+     * Get the syncable fields.
+     *
+     * @return array
+     */
+    public function getSyncableFields(): array
+    {
+        return ['name', 'email'];
+    }
+
+    /**
+     * Get the sync conditions.
+     *
+     * @return array
+     */
+    public function getSyncConditions(): array
+    {
+        return [
+            'is_active' => true,
+            'status' => ['published', 'approved'],
+        ];
+    }
+
+    /**
+     * Custom sync logic for this model.
+     *
+     * @return bool
+     */
+    public function shouldSync(): bool
+    {
+        if (!parent::shouldSync()) {
+            return false;
+        }
+        
+        return $this->model->is_syncable && $this->model->status === 'active';
+    }
+    
+    /**
+     * Get the conflict resolution strategy.
+     *
+     * @return string
+     */
+    public function getConflictResolutionStrategy(): string
+    {
+        return 'local_wins';
+    }
+}
+```
+
+2. Then, in your model, simply add a method to return the sync handler:
+
+```php
+use Syncable\Traits\Syncable;
+use App\Syncable\Handlers\UserSync;
+
+class User extends Model
+{
+    use Syncable;
+
+    /**
+     * Get the sync handler for this model.
+     *
+     * @return UserSync
+     */
+    public function syncHandler()
+    {
+        return new UserSync($this);
+    }
+}
+```
+
+This approach keeps your models clean and focused on their core functionality, while all sync-related logic is contained in dedicated handler classes.
+
 ### Dynamic Value Mapping
 
 You can now use dynamic expressions to transform data during synchronization:

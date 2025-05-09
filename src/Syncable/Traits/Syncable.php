@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\App;
 use Syncable\Events\ModelCreated;
 use Syncable\Events\ModelDeleted;
 use Syncable\Events\ModelUpdated;
+use Syncable\Handlers\SyncHandler;
 use Syncable\Jobs\SyncModelJob;
 use Illuminate\Support\Facades\Config;
 
@@ -32,6 +33,13 @@ trait Syncable
      * @var mixed
      */
     protected $target_tenant_id = null;
+    
+    /**
+     * The sync handler instance.
+     *
+     * @var SyncHandler|null
+     */
+    protected $syncHandlerInstance = null;
 
     /**
      * Boot the trait.
@@ -121,12 +129,44 @@ trait Syncable
     }
 
     /**
+     * Get the sync handler for this model.
+     * This method can be overridden in the model to provide a specific sync handler.
+     *
+     * @return SyncHandler|null
+     */
+    public function syncHandler()
+    {
+        return null;
+    }
+
+    /**
+     * Get the sync handler instance.
+     *
+     * @return SyncHandler|null
+     */
+    protected function getSyncHandlerInstance()
+    {
+        if ($this->syncHandlerInstance === null) {
+            $this->syncHandlerInstance = $this->syncHandler();
+        }
+        
+        return $this->syncHandlerInstance;
+    }
+
+    /**
      * Get the syncable configuration for this model.
      *
      * @return array
      */
     public function getSyncConfig(): array
     {
+        // If a sync handler is defined, use it
+        $handler = $this->getSyncHandlerInstance();
+        if ($handler !== null) {
+            return $handler->getSyncConfig();
+        }
+        
+        // Otherwise, use the legacy configuration approach
         $config = [
             'target_model' => $this->syncTarget ?? static::class,
             'fields' => $this->syncMap ?? [],
@@ -158,6 +198,13 @@ trait Syncable
      */
     public function shouldSync(): bool
     {
+        // If a sync handler is defined, use it
+        $handler = $this->getSyncHandlerInstance();
+        if ($handler !== null) {
+            return $handler->shouldSync();
+        }
+        
+        // Otherwise, use the legacy approach
         // Check for global conditions in config
         $conditions = Config::get('syncable.selective_sync.conditions', []);
         
@@ -197,6 +244,23 @@ trait Syncable
     }
 
     /**
+     * Get the conflict resolution strategy.
+     *
+     * @return string
+     */
+    public function getConflictResolutionStrategy(): string
+    {
+        // If a sync handler is defined, use it
+        $handler = $this->getSyncHandlerInstance();
+        if ($handler !== null) {
+            return $handler->getConflictResolutionStrategy();
+        }
+        
+        // Otherwise, fallback to property or default
+        return $this->conflictResolutionStrategy ?? 'last_write_wins';
+    }
+
+    /**
      * Sync this model to the target application.
      *
      * @param string $action
@@ -204,6 +268,13 @@ trait Syncable
      */
     public function sync(string $action = 'update'): bool
     {
+        // If a sync handler is defined, use it
+        $handler = $this->getSyncHandlerInstance();
+        if ($handler !== null) {
+            return $handler->sync($action);
+        }
+        
+        // Otherwise, use the legacy approach
         $syncService = App::make('syncable');
         return $syncService->syncModel($this, $action);
     }
