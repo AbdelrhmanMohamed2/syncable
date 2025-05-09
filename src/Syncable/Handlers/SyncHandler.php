@@ -59,6 +59,16 @@ abstract class SyncHandler
     }
 
     /**
+     * Get additional data to be synced.
+     *
+     * @return array
+     */
+    public function getAdditionalData(): array
+    {
+        return [];
+    }
+
+    /**
      * Get the sync conditions.
      *
      * @return array
@@ -144,6 +154,12 @@ abstract class SyncHandler
         $syncRelations = $this->getSyncRelations();
         if (!empty($syncRelations)) {
             $config['relations'] = $syncRelations;
+        }
+
+        // Add additional data if defined
+        $additionalData = $this->getAdditionalData();
+        if (!empty($additionalData)) {
+            $config['additional'] = $additionalData;
         }
 
         return $config;
