@@ -176,4 +176,23 @@ abstract class SyncHandler
         $syncService = App::make('syncable');
         return $syncService->syncModel($this->model, $action);
     }
+    
+    /**
+     * Process additional data received during sync.
+     *
+     * @param string $key The additional data key
+     * @param array $data The data to process
+     * @return bool Whether the data was processed
+     */
+    public function processAdditional(string $key, array $data): bool
+    {
+        $methodName = 'processAdditional' . ucfirst($key);
+        
+        if (method_exists($this, $methodName)) {
+            $this->$methodName($data);
+            return true;
+        }
+        
+        return false;
+    }
 } 

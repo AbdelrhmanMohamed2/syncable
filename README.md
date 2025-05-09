@@ -224,6 +224,107 @@ class User extends Model
 
 This approach keeps your models clean and focused on their core functionality, while all sync-related logic is contained in dedicated handler classes.
 
+### Processing Additional Data in SyncHandlers
+
+When syncing models, you might need to send additional data beyond the model's direct attributes. You can now handle both the sending and processing of this data in your SyncHandler:
+
+#### 1. Sending Additional Data
+
+In your SyncHandler class, implement the `getAdditionalData()` method:
+
+```php
+// In your SyncHandler class
+public function getAdditionalData(): array
+{
+    return [
+        'contacts' => [
+            'email' => $this->model->email,
+            'phone' => $this->model->phone,
+            'whatsapp' => $this->model->whatsapp,
+        ],
+        'addresses' => [
+            'home' => $this->model->home_address,
+            'work' => $this->model->work_address,
+        ],
+    ];
+}
+```
+
+#### 2. Processing Additional Data in the SyncHandler
+
+Instead of using handler methods in your models, you can now process incoming additional data directly in your SyncHandler class:
+
+```php
+// In your SyncHandler class
+/**
+ * Process contacts data received during sync.
+ *
+ * @param array $contactsData
+ * @return void
+ */
+public function processAdditionalContacts(array $contactsData): void
+{
+    // Process each contact
+    foreach ($contactsData as $key => $contact) {
+        if (is_null($contact)) {
+            continue;
+        }
+
+        $this->model->contacts()->updateOrCreate(
+            ['type' => $key],
+            [
+                'value' => $contact,
+                'is_primary' => 1
+            ]
+        );
+    }
+}
+
+/**
+ * Process addresses data received during sync.
+ *
+ * @param array $addressesData
+ * @return void
+ */
+public function processAdditionalAddresses(array $addressesData): void
+{
+    // Process each address
+    foreach ($addressesData as $key => $address) {
+        if (is_null($address)) {
+            continue;
+        }
+
+        $this->model->addresses()->updateOrCreate(
+            ['type' => $key],
+            [
+                'value' => $address,
+                'is_primary' => 1
+            ]
+        );
+    }
+}
+```
+
+#### 3. Using a Generic Helper
+
+The base SyncHandler class provides a generic helper method to reduce code duplication for similar processing patterns:
+
+```php
+// In your SyncHandler class
+public function processAdditionalContacts(array $contactsData): void
+{
+    // Use the generic helper method
+    $this->processRelatedCollection(
+        $contactsData,  // The data to process
+        'contacts',     // The relationship method name
+        'type',         // The field used for identification (default: 'type')
+        ['is_primary' => 1] // Additional fields (default: ['is_primary' => 1])
+    );
+}
+```
+
+This approach keeps all sync-related logic in your SyncHandler class, making your models cleaner and your sync code more focused and maintainable.
+
 ### Dynamic Value Mapping
 
 You can now use dynamic expressions to transform data during synchronization:

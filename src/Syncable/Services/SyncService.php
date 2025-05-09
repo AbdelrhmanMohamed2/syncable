@@ -638,6 +638,20 @@ class SyncService
      */
     protected function processAdditionalData(Model $model, array $additionalData): void
     {
+        // Check if model has a sync handler that can process this additional data
+        $handlerProcessed = false;
+        
+        if (method_exists($model, 'syncHandler') && $handler = $model->syncHandler()) {
+            // Try to process each piece of additional data with the handler
+            foreach ($additionalData as $key => $data) {
+                if ($handler->processAdditional($key, $data)) {
+                    // If handler processed this key, mark it as processed
+                    unset($additionalData[$key]);
+                }
+            }
+        }
+        
+        // Process any remaining data using the traditional model handler methods
         foreach ($additionalData as $key => $data) {
             // Generate the handler method name: handleAdditionalContacts, handleAdditionalAddresses, etc.
             $handlerMethod = 'handleAdditional' . ucfirst($key);
